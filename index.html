@@ -8,9 +8,29 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 </head>
 <body>
   <div id="root"></div>
+  
+  <script>
+    // Initialize Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyB8mAy3uo_u_IF-qwzKe8UVlmye_jzoyYo",
+      authDomain: "bingo-card-89c49.firebaseapp.com",
+      databaseURL: "https://bingo-card-89c49-default-rtdb.firebaseio.com",
+      projectId: "bingo-card-89c49",
+      storageBucket: "bingo-card-89c49.firebasestorage.app",
+      messagingSenderId: "655375255618",
+      appId: "1:655375255618:web:c02cc985aaf5aa8e0b85db"
+    };
+    
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+  </script>
   
   <script type="text/babel">
     const { useState, useEffect } = React;
@@ -44,22 +64,31 @@
       };
 
       useEffect(() => {
-        loadData();
-        const interval = setInterval(loadData, 5000);
-        
         const params = new URLSearchParams(window.location.search);
         setAdminMode(params.get('admin') === 'true');
         
-        return () => clearInterval(interval);
+        loadData();
+        
+        // Listen for real-time updates
+        const marksRef = database.ref('bingo-marks');
+        const configRef = database.ref('bingo-config');
+        
+        marksRef.on('value', (snapshot) => {
+          loadData();
+        });
+        
+        return () => {
+          marksRef.off();
+        };
       }, []);
 
       const loadData = async () => {
         try {
-          const marksResult = await window.storage.get('bingo-marks', true);
-          const configResult = await window.storage.get('bingo-config', true);
+          const marksSnapshot = await database.ref('bingo-marks').once('value');
+          const configSnapshot = await database.ref('bingo-config').once('value');
           
-          const marks = marksResult ? JSON.parse(marksResult.value) : Array(36).fill([]);
-          const config = configResult ? JSON.parse(configResult.value) : defaultConfig;
+          const marks = marksSnapshot.val() || Array(36).fill([]);
+          const config = configSnapshot.val() || defaultConfig;
           
           setCells(config.cells.map((text, i) => ({
             text,
@@ -68,10 +97,10 @@
           
           setLoading(false);
         } catch (error) {
-          const marks = Array(36).fill([]);
+          console.error('Error loading data:', error);
           setCells(defaultConfig.cells.map((text, i) => ({
             text,
-            colors: marks[i] || []
+            colors: []
           })));
           setLoading(false);
         }
@@ -79,7 +108,7 @@
 
       const saveMarks = async (newCells) => {
         const marks = newCells.map(cell => cell.colors);
-        await window.storage.set('bingo-marks', JSON.stringify(marks), true);
+        await database.ref('bingo-marks').set(marks);
       };
 
       const generateBingoImage = (cellsData) => {
@@ -162,10 +191,13 @@
 
       const sendDiscordNotification = async (cellIndex, colorName, action) => {
         try {
-          const configResult = await window.storage.get('bingo-config', true);
-          const config = configResult ? JSON.parse(configResult.value) : defaultConfig;
+          const configSnapshot = await database.ref('bingo-config').once('value');
+          const config = configSnapshot.val() || defaultConfig;
           
-          if (!config.discordWebhook) return;
+          if (!config.discordWebhook) {
+            console.log('No Discord webhook configured');
+            return;
+          }
 
           const cellText = cells[cellIndex].text;
           const row = Math.floor(cellIndex / 6) + 1;
@@ -208,6 +240,8 @@
             method: 'POST',
             body: formData
           });
+          
+          console.log('Discord notification sent successfully');
         } catch (error) {
           console.error('Discord notification failed:', error);
         }
@@ -234,11 +268,10 @@
         setLastUpdate(new Date());
       };
 
-      const exportConfig = () => {
-        const config = {
-          cells: cells.map(c => c.text),
-          discordWebhook: ''
-        };
+      const exportConfig = async () => {
+        const configSnapshot = await database.ref('bingo-config').once('value');
+        const config = configSnapshot.val() || defaultConfig;
+        
         const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -251,16 +284,22 @@
         const file = event.target.files[0];
         if (!file) return;
         
-        const text = await file.text();
-        const config = JSON.parse(text);
-        await window.storage.set('bingo-config', JSON.stringify(config), true);
-        await loadData();
+        try {
+          const text = await file.text();
+          const config = JSON.parse(text);
+          await database.ref('bingo-config').set(config);
+          await loadData();
+          alert('Configuration imported successfully!');
+        } catch (error) {
+          console.error('Error importing config:', error);
+          alert('Error importing configuration. Please check the file format.');
+        }
       };
 
       const resetMarks = async () => {
         if (!confirm('Reset all marks? This cannot be undone.')) return;
         const marks = Array(36).fill([]);
-        await window.storage.set('bingo-marks', JSON.stringify(marks), true);
+        await database.ref('bingo-marks').set(marks);
         await loadData();
       };
 
