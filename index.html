@@ -203,19 +203,9 @@
           const row = Math.floor(cellIndex / 6) + 1;
           const col = (cellIndex % 6) + 1;
           
+          // Generate image and convert to base64
           const imageData = generateBingoImage(cells);
-          const base64Data = imageData.split(',')[1];
-          
-          const byteCharacters = atob(base64Data);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: 'image/png' });
-          
-          const formData = new FormData();
-          formData.append('file', blob, 'bingo-card.png');
+          const base64Image = imageData.split(',')[1];
           
           const payload = {
             embeds: [{
@@ -227,19 +217,26 @@
                 value: action === 'marked' ? `✓ Marked with ${colorName}` : `✗ ${colorName} removed`,
                 inline: true
               }],
-              image: {
-                url: 'attachment://bingo-card.png'
-              },
               timestamp: new Date().toISOString()
             }]
           };
           
-          formData.append('payload_json', JSON.stringify(payload));
-          
-          await fetch(config.discordWebhook, {
+          // Send through Cloudflare Worker proxy
+          const response = await fetch('https://bingo-discord-proxy.yusiptic.workers.dev/', {
             method: 'POST',
-            body: formData
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              webhook: config.discordWebhook,
+              payload: payload,
+              imageBase64: base64Image
+            })
           });
+          
+          if (!response.ok) {
+            throw new Error(`Worker responded with ${response.status}`);
+          }
           
           console.log('Discord notification sent successfully');
         } catch (error) {
