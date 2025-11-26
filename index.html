@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Collaborative Bingo</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const BingoCard = () => {
+      const [cells, setCells] = useState([]);
+      const [selectedColor, setSelectedColor] = useState(0);
+      const [loading, setLoading] = useState(true);
+      const [lastUpdate, setLastUpdate] = useState(null);
+      const [adminMode, setAdminMode] = useState(false);
+
+      const colors = [
+        { name: 'Red', bg: 'bg-red-500', border: 'border-red-500', text: 'text-red-500', hex: '#ef4444' },
+        { name: 'Blue', bg: 'bg-blue-500', border: 'border-blue-500', text: 'text-blue-500', hex: '#3b82f6' },
+        { name: 'Green', bg: 'bg-green-500', border: 'border-green-500', text: 'text-green-500', hex: '#22c55e' },
+        { name: 'Yellow', bg: 'bg-yellow-500', border: 'border-yellow-500', text: 'text-yellow-500', hex: '#eab308' },
+        { name: 'Purple', bg: 'bg-purple-500', border: 'border-purple-500', text: 'text-purple-500', hex: '#a855f7' },
+        { name: 'Orange', bg: 'bg-orange-500', border: 'border-orange-500', text: 'text-orange-500', hex: '#f97316' }
+      ];
+
+      const defaultConfig = {
+        cells: [
+          'Free Space', 'Item 2', 'Item 3', 'Item 4', 'Item 5', 'Item 6',
+          'Item 7', 'Item 8', 'Item 9', 'Item 10', 'Item 11', 'Item 12',
+          'Item 13', 'Item 14', 'Item 15', 'Item 16', 'Item 17', 'Item 18',
+          'Item 19', 'Item 20', 'Item 21', 'Item 22', 'Item 23', 'Item 24',
+          'Item 25', 'Item 26', 'Item 27', 'Item 28', 'Item 29', 'Item 30',
+          'Item 31', 'Item 32', 'Item 33', 'Item 34', 'Item 35', 'Item 36'
+        ],
+        discordWebhook: ''
+      };
+
+      useEffect(() => {
+        loadData();
+        const interval = setInterval(loadData, 5000);
+        
+        const params = new URLSearchParams(window.location.search);
+        setAdminMode(params.get('admin') === 'true');
+        
+        return () => clearInterval(interval);
+      }, []);
+
+      const loadData = async () => {
+        try {
+          const marksResult = await window.storage.get('bingo-marks', true);
+          const configResult = await window.storage.get('bingo-config', true);
+          
+          const marks = marksResult ? JSON.parse(marksResult.value) : Array(36).fill([]);
+          const config = configResult ? JSON.parse(configResult.value) : defaultConfig;
+          
+          setCells(config.cells.map((text, i) => ({
+            text,
+            colors: marks[i] || []
+          })));
+          
+          setLoading(false);
+        } catch (error) {
+          const marks = Array(36).fill([]);
+          setCells(defaultConfig.cells.map((text, i) => ({
+            text,
+            colors: marks[i] || []
+          })));
+          setLoading(false);
+        }
+      };
+
+      const saveMarks = async (newCells) => {
+        const marks = newCells.map(cell => cell.colors);
+        await window.storage.set('bingo-marks', JSON.stringify(marks), true);
+      };
+
+      const generateBingoImage = (cellsData) => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const cellSize = 100;
+        const gridSize = 6;
+        const canvasSize = cellSize * gridSize;
+        
+        canvas.width = canvasSize;
+        canvas.height = canvasSize;
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvasSize, canvasSize);
+        
+        cellsData.forEach((cell, idx) => {
+          const row = Math.floor(idx / 6);
+          const col = idx % 6;
+          const x = col * cellSize;
+          const y = row * cellSize;
+          
+          if (cell.colors.length > 0) {
+            cell.colors.forEach((colorIdx, i) => {
+              ctx.fillStyle = colors[colorIdx].hex;
+              ctx.globalAlpha = 0.3;
+              
+              if (cell.colors.length === 1) {
+                ctx.fillRect(x, y, cellSize, cellSize);
+              } else if (cell.colors.length === 2) {
+                ctx.fillRect(x + (i * cellSize / 2), y, cellSize / 2, cellSize);
+              } else if (cell.colors.length <= 4) {
+                const quadX = i % 2;
+                const quadY = Math.floor(i / 2);
+                ctx.fillRect(x + (quadX * cellSize / 2), y + (quadY * cellSize / 2), cellSize / 2, cellSize / 2);
+              } else {
+                const thirdX = i % 3;
+                const thirdY = Math.floor(i / 3);
+                ctx.fillRect(x + (thirdX * cellSize / 3), y + (thirdY * cellSize / 3), cellSize / 3, cellSize / 3);
+              }
+            });
+            ctx.globalAlpha = 1.0;
+          }
+          
+          ctx.strokeStyle = '#d1d5db';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x, y, cellSize, cellSize);
+          
+          ctx.fillStyle = '#1f2937';
+          ctx.font = '12px Arial';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          
+          const words = cell.text.split(' ');
+          const maxWidth = cellSize - 10;
+          let line = '';
+          let lines = [];
+          
+          words.forEach(word => {
+            const testLine = line + word + ' ';
+            const metrics = ctx.measureText(testLine);
+            if (metrics.width > maxWidth && line !== '') {
+              lines.push(line);
+              line = word + ' ';
+            } else {
+              line = testLine;
+            }
+          });
+          lines.push(line);
+          
+          const lineHeight = 14;
+          const startY = y + cellSize / 2 - ((lines.length - 1) * lineHeight) / 2;
+          
+          lines.forEach((line, i) => {
+            ctx.fillText(line.trim(), x + cellSize / 2, startY + i * lineHeight);
+          });
+        });
+        
+        return canvas.toDataURL('image/png');
+      };
+
+      const sendDiscordNotification = async (cellIndex, colorName, action) => {
+        try {
+          const configResult = await window.storage.get('bingo-config', true);
+          const config = configResult ? JSON.parse(configResult.value) : defaultConfig;
+          
+          if (!config.discordWebhook) return;
+
+          const cellText = cells[cellIndex].text;
+          const row = Math.floor(cellIndex / 6) + 1;
+          const col = (cellIndex % 6) + 1;
+          
+          const imageData = generateBingoImage(cells);
+          const base64Data = imageData.split(',')[1];
+          
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'image/png' });
+          
+          const formData = new FormData();
+          formData.append('file', blob, 'bingo-card.png');
+          
+          const payload = {
+            embeds: [{
+              title: '🎯 Bingo Card Update',
+              description: `**${cellText}** (Row ${row}, Col ${col})`,
+              color: action === 'marked' ? 3066993 : 15158332,
+              fields: [{
+                name: 'Action',
+                value: action === 'marked' ? `✓ Marked with ${colorName}` : `✗ ${colorName} removed`,
+                inline: true
+              }],
+              image: {
+                url: 'attachment://bingo-card.png'
+              },
+              timestamp: new Date().toISOString()
+            }]
+          };
+          
+          formData.append('payload_json', JSON.stringify(payload));
+          
+          await fetch(config.discordWebhook, {
+            method: 'POST',
+            body: formData
+          });
+        } catch (error) {
+          console.error('Discord notification failed:', error);
+        }
+      };
+
+      const toggleColor = async (index) => {
+        const newCells = [...cells];
+        const colorIndex = selectedColor;
+        const colorSet = new Set(newCells[index].colors);
+        
+        let action;
+        if (colorSet.has(colorIndex)) {
+          colorSet.delete(colorIndex);
+          action = 'unmarked';
+        } else {
+          colorSet.add(colorIndex);
+          action = 'marked';
+        }
+        
+        newCells[index].colors = Array.from(colorSet);
+        setCells(newCells);
+        await saveMarks(newCells);
+        await sendDiscordNotification(index, colors[colorIndex].name, action);
+        setLastUpdate(new Date());
+      };
+
+      const exportConfig = () => {
+        const config = {
+          cells: cells.map(c => c.text),
+          discordWebhook: ''
+        };
+        const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'bingo-config.json';
+        a.click();
+      };
+
+      const importConfig = async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const text = await file.text();
+        const config = JSON.parse(text);
+        await window.storage.set('bingo-config', JSON.stringify(config), true);
+        await loadData();
+      };
+
+      const resetMarks = async () => {
+        if (!confirm('Reset all marks? This cannot be undone.')) return;
+        const marks = Array(36).fill([]);
+        await window.storage.set('bingo-marks', JSON.stringify(marks), true);
+        await loadData();
+      };
+
+      if (loading) {
+        return (
+          <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-100 to-purple-100">
+            <div className="text-xl text-gray-600">Loading bingo card...</div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl">
+            {adminMode && (
+              <div className="bg-white rounded-2xl shadow-2xl p-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-gray-800">Admin Controls</h2>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={loadData}
+                      className="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
+                      title="Refresh"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 2v6h-6"></path>
+                        <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                        <path d="M3 22v-6h6"></path>
+                        <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                      </svg>
+                    </button>
+                    <button
+                      onClick={exportConfig}
+                      className="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition"
+                      title="Export Config"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                      </svg>
+                    </button>
+                    <label className="p-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition cursor-pointer" title="Import Config">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                      </svg>
+                      <input type="file" accept=".json" onChange={importConfig} className="hidden" />
+                    </label>
+                    <button
+                      onClick={resetMarks}
+                      className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm"
+                    >
+                      Reset All
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-white shadow-2xl p-4 sm:p-6">
+              <div className="mb-6">
+                <div className="flex gap-2 sm:gap-3 flex-wrap justify-center">
+                  {colors.map((color, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setSelectedColor(idx)}
+                      className={`px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold transition-all text-sm sm:text-base ${
+                        selectedColor === idx
+                          ? `${color.bg} text-white scale-105 shadow-lg`
+                          : `bg-gray-200 ${color.text} hover:scale-105`
+                      }`}
+                    >
+                      {color.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-6 gap-1 sm:gap-2 mb-4">
+                {cells.map((cell, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => toggleColor(idx)}
+                    className="aspect-square bg-white border-2 border-gray-300 p-1 sm:p-2 cursor-pointer hover:shadow-lg transition-all relative overflow-hidden group"
+                  >
+                    <div className="absolute inset-0 flex flex-wrap">
+                      {cell.colors.map((colorIdx, i) => (
+                        <div
+                          key={i}
+                          className={`${colors[colorIdx].bg} opacity-30`}
+                          style={{
+                            width: cell.colors.length === 1 ? '100%' : '50%',
+                            height: cell.colors.length <= 2 ? '100%' : cell.colors.length <= 4 ? '50%' : '33.33%'
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <div className="relative z-10 h-full flex items-center justify-center">
+                      <span className="text-[0.6rem] sm:text-xs font-medium text-gray-800 text-center leading-tight">
+                        {cell.text}
+                      </span>
+                    </div>
+                    {cell.colors.length > 0 && (
+                      <div className="absolute top-0.5 sm:top-1 right-0.5 sm:right-1 z-20 flex gap-0.5">
+                        {cell.colors.map((colorIdx, i) => (
+                          <div
+                            key={i}
+                            className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${colors[colorIdx].bg} border border-white`}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {adminMode && lastUpdate && (
+                <div className="text-sm text-gray-500 text-center">
+                  Last updated: {lastUpdate.toLocaleTimeString()}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    ReactDOM.render(<BingoCard />, document.getElementById('root'));
+  </script>
+</body>
+</html>
