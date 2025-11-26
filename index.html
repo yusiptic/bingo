@@ -139,14 +139,26 @@
                 ctx.fillRect(x, y, cellSize, cellSize);
               } else if (cell.colors.length === 2) {
                 ctx.fillRect(x + (i * cellSize / 2), y, cellSize / 2, cellSize);
-              } else if (cell.colors.length <= 4) {
+              } else if (cell.colors.length === 3) {
+                // 3 colors: 2 columns, 2 rows (one cell empty)
                 const quadX = i % 2;
                 const quadY = Math.floor(i / 2);
                 ctx.fillRect(x + (quadX * cellSize / 2), y + (quadY * cellSize / 2), cellSize / 2, cellSize / 2);
+              } else if (cell.colors.length === 4) {
+                // 4 colors: 2x2 grid
+                const quadX = i % 2;
+                const quadY = Math.floor(i / 2);
+                ctx.fillRect(x + (quadX * cellSize / 2), y + (quadY * cellSize / 2), cellSize / 2, cellSize / 2);
+              } else if (cell.colors.length === 5) {
+                // 5 colors: 2 columns, 3 rows
+                const colX = i % 2;
+                const rowY = Math.floor(i / 2);
+                ctx.fillRect(x + (colX * cellSize / 2), y + (rowY * cellSize / 3), cellSize / 2, cellSize / 3);
               } else {
-                const thirdX = i % 3;
-                const thirdY = Math.floor(i / 3);
-                ctx.fillRect(x + (thirdX * cellSize / 3), y + (thirdY * cellSize / 3), cellSize / 3, cellSize / 3);
+                // 6 colors: 2 columns, 3 rows
+                const colX = i % 2;
+                const rowY = Math.floor(i / 2);
+                ctx.fillRect(x + (colX * cellSize / 2), y + (rowY * cellSize / 3), cellSize / 2, cellSize / 3);
               }
             });
             ctx.globalAlpha = 1.0;
